@@ -94,9 +94,38 @@ Run the following command to register the MCP server:
 gemini mcp add things node /path/to/things-app-mcp/dist/index.js
 ```
 
-### Auth Token (for update operations)
+### Auth Token Configuration
 
-To use `update-todo` and `update-project`, you need your Things auth-token:
+To use `update-todo` and `update-project`, you need your Things auth-token.
+
+**Option 1: Environment Variable (Recommended)**
+
+Set the `THINGS_AUTH_TOKEN` environment variable in your MCP client configuration. This avoids needing to pass the token with every request.
+
+**Claude Desktop:**
+```json
+{
+  "mcpServers": {
+    "things": {
+      "command": "node",
+      "args": ["/path/to/things-app-mcp/dist/index.js"],
+      "env": {
+        "THINGS_AUTH_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+**Gemini CLI:**
+Set the environment variable in your shell configuration or pass it when running:
+```bash
+export THINGS_AUTH_TOKEN="your-token-here"
+```
+
+**Option 2: Parameter**
+
+If the environment variable is not set, you must pass the token as the `authToken` parameter when calling update tools:
 
 1. Open Things on Mac
 2. Go to **Things > Settings > General > Enable Things URLs > Manage**

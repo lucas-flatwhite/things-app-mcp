@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "things": {
+      "command": "node",
+      "args": [
+        "/Users/lucas-flatwhite/Documents/github/things-app-mcp/dist/index.js"
+      ]
+    }
+  }
+}

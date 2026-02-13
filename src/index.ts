@@ -311,8 +311,9 @@ server.registerTool(
     inputSchema: {
       authToken: z
         .string()
+        .optional()
         .describe(
-          "Things URL scheme authorization token (find in Things Settings > General > Things URLs)"
+          "Things URL scheme authorization token (find in Things Settings > General > Things URLs). If omitted, tries to read from THINGS_AUTH_TOKEN env var."
         ),
       id: z.string().describe("ID of the to-do to update"),
       title: z.string().optional().describe("New title"),
@@ -378,8 +379,21 @@ server.registerTool(
     },
   },
   async (args) => {
+    const authToken = args.authToken || process.env.THINGS_AUTH_TOKEN;
+    if (!authToken) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: Auth token is required. Provide it via 'authToken' parameter or 'THINGS_AUTH_TOKEN' environment variable.",
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const url = buildUpdateTodoURL({
-      "auth-token": args.authToken,
+      "auth-token": authToken,
       id: args.id,
       title: args.title,
       notes: args.notes,
@@ -432,7 +446,8 @@ server.registerTool(
     inputSchema: {
       authToken: z
         .string()
-        .describe("Things URL scheme authorization token"),
+        .optional()
+        .describe("Things URL scheme authorization token. If omitted, tries to read from THINGS_AUTH_TOKEN env var."),
       id: z.string().describe("ID of the project to update"),
       title: z.string().optional().describe("New title"),
       notes: z.string().optional().describe("Replace notes"),
@@ -457,8 +472,21 @@ server.registerTool(
     },
   },
   async (args) => {
+    const authToken = args.authToken || process.env.THINGS_AUTH_TOKEN;
+    if (!authToken) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: Auth token is required. Provide it via 'authToken' parameter or 'THINGS_AUTH_TOKEN' environment variable.",
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const url = buildUpdateProjectURL({
-      "auth-token": args.authToken,
+      "auth-token": authToken,
       id: args.id,
       title: args.title,
       notes: args.notes,
@@ -605,7 +633,7 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "Things auth-token (required when data contains update operations)"
+          "Things auth-token (required when data contains update operations). If omitted, tries to read from THINGS_AUTH_TOKEN env var."
         ),
       reveal: z
         .boolean()
@@ -644,9 +672,11 @@ server.registerTool(
       };
     }
 
+    const authToken = args.authToken || process.env.THINGS_AUTH_TOKEN;
+
     const url = buildJsonURL({
       data: parsedData,
-      "auth-token": args.authToken,
+      "auth-token": authToken,
       reveal: args.reveal,
     });
 
