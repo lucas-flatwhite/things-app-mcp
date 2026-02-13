@@ -145,7 +145,7 @@ export async function getTodosFromList(
       dueDate: todo.dueDate() ? todo.dueDate().toISOString() : null,
       activationDate: todo.activationDate() ? todo.activationDate().toISOString() : null,
       creationDate: todo.creationDate().toISOString(),
-      modificationDate: todo.modificationDate().toISOString(),
+      modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: (() => { try { return todo.project().name(); } catch(e) { return null; } })(),
       areaName: (() => { try { return todo.area().name(); } catch(e) { return null; } })()
@@ -174,7 +174,7 @@ export async function getTodosFromProject(
       dueDate: todo.dueDate() ? todo.dueDate().toISOString() : null,
       activationDate: todo.activationDate() ? todo.activationDate().toISOString() : null,
       creationDate: todo.creationDate().toISOString(),
-      modificationDate: todo.modificationDate().toISOString(),
+      modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: "${escapedName}",
       areaName: (() => { try { return todo.area().name(); } catch(e) { return null; } })()
@@ -203,7 +203,7 @@ export async function getTodosFromArea(
       dueDate: todo.dueDate() ? todo.dueDate().toISOString() : null,
       activationDate: todo.activationDate() ? todo.activationDate().toISOString() : null,
       creationDate: todo.creationDate().toISOString(),
-      modificationDate: todo.modificationDate().toISOString(),
+      modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: (() => { try { return todo.project().name(); } catch(e) { return null; } })(),
       areaName: "${escapedName}"
@@ -230,7 +230,7 @@ export async function getTodoById(id: string): Promise<ThingsTodo> {
       dueDate: todo.dueDate() ? todo.dueDate().toISOString() : null,
       activationDate: todo.activationDate() ? todo.activationDate().toISOString() : null,
       creationDate: todo.creationDate().toISOString(),
-      modificationDate: todo.modificationDate().toISOString(),
+      modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: (() => { try { return todo.project().name(); } catch(e) { return null; } })(),
       areaName: (() => { try { return todo.area().name(); } catch(e) { return null; } })()
@@ -256,7 +256,7 @@ export async function getProjects(): Promise<ThingsProject[]> {
       dueDate: proj.dueDate() ? proj.dueDate().toISOString() : null,
       activationDate: proj.activationDate() ? proj.activationDate().toISOString() : null,
       creationDate: proj.creationDate().toISOString(),
-      modificationDate: proj.modificationDate().toISOString(),
+      modificationDate: proj.modificationDate() ? proj.modificationDate().toISOString() : null,
       completionDate: proj.completionDate() ? proj.completionDate().toISOString() : null,
       areaName: (() => { try { return proj.area().name(); } catch(e) { return null; } })(),
       todoCount: proj.toDos().length
@@ -283,7 +283,7 @@ export async function getProjectById(id: string): Promise<ThingsProject> {
       dueDate: proj.dueDate() ? proj.dueDate().toISOString() : null,
       activationDate: proj.activationDate() ? proj.activationDate().toISOString() : null,
       creationDate: proj.creationDate().toISOString(),
-      modificationDate: proj.modificationDate().toISOString(),
+      modificationDate: proj.modificationDate() ? proj.modificationDate().toISOString() : null,
       completionDate: proj.completionDate() ? proj.completionDate().toISOString() : null,
       areaName: (() => { try { return proj.area().name(); } catch(e) { return null; } })(),
       todoCount: proj.toDos().length
@@ -345,7 +345,7 @@ export async function getTodosByTag(tagName: string): Promise<ThingsTodo[]> {
       dueDate: todo.dueDate() ? todo.dueDate().toISOString() : null,
       activationDate: todo.activationDate() ? todo.activationDate().toISOString() : null,
       creationDate: todo.creationDate().toISOString(),
-      modificationDate: todo.modificationDate().toISOString(),
+      modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: (() => { try { return todo.project().name(); } catch(e) { return null; } })(),
       areaName: (() => { try { return todo.area().name(); } catch(e) { return null; } })()
@@ -376,7 +376,7 @@ export async function getRecentTodos(days: number = 7): Promise<ThingsTodo[]> {
       dueDate: todo.dueDate() ? todo.dueDate().toISOString() : null,
       activationDate: todo.activationDate() ? todo.activationDate().toISOString() : null,
       creationDate: todo.creationDate().toISOString(),
-      modificationDate: todo.modificationDate().toISOString(),
+      modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: (() => { try { return todo.project().name(); } catch(e) { return null; } })(),
       areaName: (() => { try { return todo.area().name(); } catch(e) { return null; } })()
@@ -410,7 +410,7 @@ export async function searchTodosByTitle(
       dueDate: todo.dueDate() ? todo.dueDate().toISOString() : null,
       activationDate: todo.activationDate() ? todo.activationDate().toISOString() : null,
       creationDate: todo.creationDate().toISOString(),
-      modificationDate: todo.modificationDate().toISOString(),
+      modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: (() => { try { return todo.project().name(); } catch(e) { return null; } })(),
       areaName: (() => { try { return todo.area().name(); } catch(e) { return null; } })()
