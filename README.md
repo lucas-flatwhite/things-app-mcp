@@ -86,6 +86,14 @@ Add to your Cursor MCP settings (`.cursor/mcp.json`):
 }
 ```
 
+### Gemini CLI
+
+Run the following command to register the MCP server:
+
+```bash
+gemini mcp add things node /path/to/things-app-mcp/dist/index.js
+```
+
 ### Auth Token (for update operations)
 
 To use `update-todo` and `update-project`, you need your Things auth-token:
