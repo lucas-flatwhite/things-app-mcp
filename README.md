@@ -1,4 +1,4 @@
-# Things MCP
+# Things App MCP
 
 An MCP (Model Context Protocol) server for [Things 3](https://culturedcode.com/things/) on macOS. Enables AI assistants like Claude to create, read, update, and manage your tasks directly in Things.
 
@@ -41,7 +41,7 @@ An MCP (Model Context Protocol) server for [Things 3](https://culturedcode.com/t
 ```bash
 # Clone and build
 git clone <repository-url>
-cd things-mcp
+cd things-app-mcp
 npm install
 npm run build
 ```
@@ -49,7 +49,7 @@ npm run build
 Or install globally:
 
 ```bash
-npm install -g things-mcp
+npm install -g things-app-mcp
 ```
 
 ## Configuration
@@ -65,7 +65,7 @@ Add to your Claude Desktop configuration file:
   "mcpServers": {
     "things": {
       "command": "node",
-      "args": ["/path/to/things-mcp/dist/index.js"]
+      "args": ["/path/to/things-app-mcp/dist/index.js"]
     }
   }
 }
@@ -80,7 +80,7 @@ Add to your Cursor MCP settings (`.cursor/mcp.json`):
   "mcpServers": {
     "things": {
       "command": "node",
-      "args": ["/path/to/things-mcp/dist/index.js"]
+      "args": ["/path/to/things-app-mcp/dist/index.js"]
     }
   }
 }
@@ -180,7 +180,7 @@ This MCP server implements the full [Things URL Scheme v2](https://culturedcode.
 ## Architecture
 
 ```
-things-mcp/
+things-app-mcp/
   src/
     index.ts          # MCP server entry point with all tool registrations
     things-url.ts     # Things URL scheme builder (URL construction)

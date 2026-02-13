@@ -61,7 +61,7 @@ import {
 
 const server = new McpServer(
   {
-    name: "things-mcp",
+    name: "things-app-mcp",
     version: "1.0.0",
   },
   {
