@@ -1,12 +1,12 @@
 {
   "name": "things-app-mcp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP server for Things 3 - Create, read, update, and manage tasks via the Things URL scheme and AppleScript",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "bin": {
-    "things-mcp": "dist/index.js"
+    "things-app-mcp": "dist/index.js"
   },
   "files": [
     "dist"

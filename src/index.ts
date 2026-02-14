@@ -71,6 +71,16 @@ const server = new McpServer(
   }
 );
 
+function resolveAuthToken(authToken?: string): string | undefined {
+  const raw = authToken ?? process.env.THINGS_AUTH_TOKEN;
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+
+  const normalized = raw.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 // --------------------------------------------------------------------------
 // URL Scheme Tools (Write Operations)
 // --------------------------------------------------------------------------
@@ -379,7 +389,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    const authToken = args.authToken || process.env.THINGS_AUTH_TOKEN;
+    const authToken = resolveAuthToken(args.authToken);
     if (!authToken) {
       return {
         content: [
@@ -472,7 +482,7 @@ server.registerTool(
     },
   },
   async (args) => {
-    const authToken = args.authToken || process.env.THINGS_AUTH_TOKEN;
+    const authToken = resolveAuthToken(args.authToken);
     if (!authToken) {
       return {
         content: [
@@ -672,7 +682,7 @@ server.registerTool(
       };
     }
 
-    const authToken = args.authToken || process.env.THINGS_AUTH_TOKEN;
+    const authToken = resolveAuthToken(args.authToken);
 
     const url = buildJsonURL({
       data: parsedData,

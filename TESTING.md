@@ -45,9 +45,9 @@ Configuration for MCP Clients:
 ```json
 {
   "mcpServers": {
-    "things-mcp": {
+    "things": {
       "command": "node",
-      "args": ["/path/to/things-mcp/dist/index.js"]
+      "args": ["/path/to/things-app-mcp/dist/index.js"]
     }
   }
 }

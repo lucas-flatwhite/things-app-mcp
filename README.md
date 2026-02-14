@@ -64,8 +64,8 @@ Add to your Claude Desktop configuration file:
 {
   "mcpServers": {
     "things": {
-      "command": "node",
-      "args": ["/path/to/things-app-mcp/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "things-app-mcp@latest"]
     }
   }
 }
@@ -79,11 +79,23 @@ Add to your Cursor MCP settings (`.cursor/mcp.json`):
 {
   "mcpServers": {
     "things": {
-      "command": "node",
-      "args": ["/path/to/things-app-mcp/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "things-app-mcp@latest"]
     }
   }
 }
+```
+
+### Codex
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.things]
+command = "npx"
+args = ["-y", "things-app-mcp@latest"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
 ```
 
 ### Gemini CLI
@@ -91,7 +103,7 @@ Add to your Cursor MCP settings (`.cursor/mcp.json`):
 Run the following command to register the MCP server:
 
 ```bash
-gemini mcp add things node /path/to/things-app-mcp/dist/index.js
+gemini mcp add things npx -y things-app-mcp@latest
 ```
 
 ### Auth Token Configuration
@@ -107,14 +119,26 @@ Set the `THINGS_AUTH_TOKEN` environment variable in your MCP client configuratio
 {
   "mcpServers": {
     "things": {
-      "command": "node",
-      "args": ["/path/to/things-app-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "things-app-mcp@latest"],
       "env": {
         "THINGS_AUTH_TOKEN": "your-token-here"
       }
     }
   }
 }
+```
+
+**Codex (`~/.codex/config.toml`):**
+```toml
+[mcp_servers.things]
+command = "npx"
+args = ["-y", "things-app-mcp@latest"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+
+[mcp_servers.things.env]
+THINGS_AUTH_TOKEN = "your-token-here"
 ```
 
 **Gemini CLI:**
