@@ -7,6 +7,53 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const THINGS_APP_CANDIDATES = [
+  "Things3",
+  "Things",
+  "com.culturedcode.ThingsMac",
+  "/Applications/Things3.app",
+] as const;
+
+function formatExecError(error: unknown): string {
+  const err = error as { stderr?: string; stdout?: string; message?: string };
+  const detail = [err.stderr, err.stdout, err.message]
+    .filter((part): part is string => typeof part === "string" && part.trim() !== "")
+    .join("\n")
+    .trim();
+
+  return detail || "Unknown process execution error";
+}
+
+function withThingsAppFallback(script: string): string {
+  const candidateList = THINGS_APP_CANDIDATES.map((candidate) =>
+    JSON.stringify(candidate)
+  ).join(", ");
+
+  const resolver = `
+    const __thingsCandidates = [${candidateList}];
+    let things = null;
+    for (const candidate of __thingsCandidates) {
+      try {
+        const app = Application(candidate);
+        const appId = app.id();
+        if (appId === "com.culturedcode.ThingsMac") {
+          things = app;
+          break;
+        }
+      } catch (error) {
+        // continue
+      }
+    }
+    if (!things) {
+      throw new Error("Unable to connect to Things via JXA.");
+    }
+  `;
+
+  return script.replace(
+    /const things = Application\("Things3"\);/g,
+    resolver.trim()
+  );
+}
 
 /**
  * Executes an AppleScript and returns the output.
@@ -19,10 +66,7 @@ async function runAppleScript(script: string): Promise<string> {
     });
     return stdout.trim();
   } catch (error: unknown) {
-    const err = error as { stderr?: string; message?: string };
-    throw new Error(
-      `AppleScript execution failed: ${err.stderr || err.message}`
-    );
+    throw new Error(`AppleScript execution failed: ${formatExecError(error)}`);
   }
 }
 
@@ -30,19 +74,33 @@ async function runAppleScript(script: string): Promise<string> {
  * Executes JXA (JavaScript for Automation) and returns parsed JSON.
  */
 async function runJXA<T>(script: string): Promise<T> {
+  const scriptWithFallback = withThingsAppFallback(script);
+
   try {
     const { stdout } = await execFileAsync(
       "osascript",
-      ["-l", "JavaScript", "-e", script],
+      ["-l", "JavaScript", "-e", scriptWithFallback],
       {
-        timeout: 15000,
+        timeout: 120000,
         maxBuffer: 1024 * 1024 * 5,
       }
     );
     return JSON.parse(stdout.trim()) as T;
   } catch (error: unknown) {
-    const err = error as { stderr?: string; message?: string };
-    throw new Error(`JXA execution failed: ${err.stderr || err.message}`);
+    const detail = formatExecError(error);
+    const lower = detail.toLowerCase();
+    const isAppResolutionError =
+      lower.includes("application can't be found") ||
+      lower.includes("can't get application") ||
+      lower.includes("unable to connect to things via jxa") ||
+      lower.includes("(-2700)") ||
+      lower.includes("(-1728)");
+
+    const hint = isAppResolutionError
+      ? " Check macOS Automation permissions for your MCP host and ensure Things 3 is installed at /Applications/Things3.app."
+      : "";
+
+    throw new Error(`JXA execution failed: ${detail}${hint}`);
   }
 }
 

@@ -21,6 +21,28 @@ To run it:
 node scripts/test-client.js
 ```
 
+For broader coverage across all exposed tools, run:
+
+```bash
+npm run test:tools
+```
+
+By default this runs non-destructive checks and skips write-tool end-to-end calls.
+To include write-tool tests (`add-todo`, `add-project`, `add-json`), set:
+
+```bash
+THINGS_MCP_TEST_ALLOW_WRITES=1 npm run test:tools
+```
+
+`update-todo` and `update-project` require `THINGS_AUTH_TOKEN` plus target IDs for success-path tests:
+
+```bash
+THINGS_AUTH_TOKEN=... \
+THINGS_MCP_TEST_TODO_ID=... \
+THINGS_MCP_TEST_PROJECT_ID=... \
+npm run test:tools
+```
+
 ## Expected Output
 
 You should see output similar to:

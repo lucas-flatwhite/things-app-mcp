@@ -29,6 +29,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   buildAddTodoURL,
@@ -55,6 +58,14 @@ import {
   searchTodosByTitle,
 } from "./applescript.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const packageJsonPath = path.resolve(__dirname, "../package.json");
+const packageJson = JSON.parse(
+  readFileSync(packageJsonPath, "utf8")
+) as { version?: string };
+const serverVersion = packageJson.version ?? "0.0.0";
+
 // --------------------------------------------------------------------------
 // Server Setup
 // --------------------------------------------------------------------------
@@ -62,7 +73,7 @@ import {
 const server = new McpServer(
   {
     name: "things-app-mcp",
-    version: "1.0.0",
+    version: serverVersion,
   },
   {
     capabilities: {
@@ -79,6 +90,29 @@ function resolveAuthToken(authToken?: string): string | undefined {
 
   const normalized = raw.trim();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function sanitizeThingsURL(rawURL: string): string {
+  try {
+    const parsed = new URL(rawURL);
+    const sensitiveParams = [
+      "auth-token",
+      "data",
+      "notes",
+      "prepend-notes",
+      "append-notes",
+    ];
+
+    for (const key of sensitiveParams) {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.set(key, "***");
+      }
+    }
+
+    return parsed.toString();
+  } catch {
+    return rawURL.replace(/(auth-token=)[^&]*/gi, "$1***");
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -210,7 +244,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `Error creating to-do: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${url}`,
+            text: `Error creating to-do: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${sanitizeThingsURL(url)}`,
           },
         ],
         isError: true,
@@ -303,7 +337,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `Error creating project: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${url}`,
+            text: `Error creating project: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${sanitizeThingsURL(url)}`,
           },
         ],
         isError: true,
@@ -438,7 +472,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `Error updating to-do: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${url}`,
+            text: `Error updating to-do: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${sanitizeThingsURL(url)}`,
           },
         ],
         isError: true,
@@ -526,7 +560,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `Error updating project: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${url}`,
+            text: `Error updating project: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${sanitizeThingsURL(url)}`,
           },
         ],
         isError: true,
@@ -582,7 +616,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `Error showing in Things: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${url}`,
+            text: `Error showing in Things: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${sanitizeThingsURL(url)}`,
           },
         ],
         isError: true,
@@ -618,7 +652,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `Error searching in Things: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${url}`,
+            text: `Error searching in Things: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${sanitizeThingsURL(url)}`,
           },
         ],
         isError: true,
@@ -705,7 +739,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `Error executing JSON command: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${url}`,
+            text: `Error executing JSON command: ${error instanceof Error ? error.message : String(error)}\n\nAttempted URL: ${sanitizeThingsURL(url)}`,
           },
         ],
         isError: true,
@@ -723,7 +757,7 @@ server.registerTool(
   {
     title: "Get To-Dos",
     description:
-      "Get to-dos from Things by list, project, area, or tag. Specify exactly one source. Uses AppleScript (macOS only).",
+      "Get to-dos from Things by list, project, area, or tag. Specify exactly one source. Uses AppleScript/JXA (macOS only).",
     inputSchema: {
       list: z
         .string()
@@ -791,7 +825,7 @@ server.registerTool(
   "get-todo-by-id",
   {
     title: "Get To-Do by ID",
-    description: "Get a specific to-do by its ID. Uses AppleScript (macOS only).",
+    description: "Get a specific to-do by its ID. Uses AppleScript/JXA (macOS only).",
     inputSchema: {
       id: z.string().describe("The ID of the to-do to retrieve"),
     },
@@ -829,7 +863,7 @@ server.registerTool(
   "get-projects",
   {
     title: "Get Projects",
-    description: "Get all projects from Things. Uses AppleScript (macOS only).",
+    description: "Get all projects from Things. Uses AppleScript/JXA (macOS only).",
     inputSchema: {},
     annotations: {
       title: "Get Projects",
@@ -865,7 +899,7 @@ server.registerTool(
   "get-project-by-id",
   {
     title: "Get Project by ID",
-    description: "Get a specific project by its ID. Uses AppleScript (macOS only).",
+    description: "Get a specific project by its ID. Uses AppleScript/JXA (macOS only).",
     inputSchema: {
       id: z.string().describe("The ID of the project to retrieve"),
     },
@@ -903,7 +937,7 @@ server.registerTool(
   "get-areas",
   {
     title: "Get Areas",
-    description: "Get all areas from Things. Uses AppleScript (macOS only).",
+    description: "Get all areas from Things. Uses AppleScript/JXA (macOS only).",
     inputSchema: {},
     annotations: {
       title: "Get Areas",
@@ -939,7 +973,7 @@ server.registerTool(
   "get-tags",
   {
     title: "Get Tags",
-    description: "Get all tags from Things. Uses AppleScript (macOS only).",
+    description: "Get all tags from Things. Uses AppleScript/JXA (macOS only).",
     inputSchema: {},
     annotations: {
       title: "Get Tags",
@@ -976,7 +1010,7 @@ server.registerTool(
   {
     title: "Search To-Dos",
     description:
-      "Search for to-dos by title or notes content. Uses AppleScript (macOS only).",
+      "Search for to-dos by title or notes content. Uses AppleScript/JXA (macOS only).",
     inputSchema: {
       query: z
         .string()
@@ -1017,7 +1051,7 @@ server.registerTool(
   {
     title: "Get Recent To-Dos",
     description:
-      "Get recently modified to-dos. Uses AppleScript (macOS only).",
+      "Get recently modified to-dos. Uses AppleScript/JXA (macOS only).",
     inputSchema: {
       days: z
         .number()
