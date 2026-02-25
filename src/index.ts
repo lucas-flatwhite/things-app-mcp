@@ -1088,6 +1088,262 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  "reschedule-distant-todos",
+  {
+    title: "Reschedule Distant To-Dos",
+    description:
+      "Among today's to-do list in Things, find items whose deadline (dueDate) is still far enough in the future and reschedule their 'when' date to a configurable number of days before the deadline. This clears Today of items that are not urgently needed today. Requires your Things auth-token for write operations.",
+    inputSchema: {
+      authToken: z
+        .string()
+        .optional()
+        .describe(
+          "Things URL scheme authorization token (find in Things Settings > General > Things URLs). If omitted, tries to read from THINGS_AUTH_TOKEN env var."
+        ),
+      daysThreshold: z
+        .number()
+        .optional()
+        .describe(
+          "Minimum number of days until deadline for a to-do to be considered distant and eligible for rescheduling (default: 7). To-dos with fewer days remaining are left in Today."
+        ),
+      bufferDays: z
+        .number()
+        .optional()
+        .describe(
+          "How many days before the deadline to set the new 'when' date (default: 1). For example, with bufferDays=1 a deadline 10 days away becomes a 'when' of 9 days from today."
+        ),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, only report which to-dos would be rescheduled without making any changes (default: false)."
+        ),
+    },
+    annotations: {
+      title: "Reschedule Distant To-Dos",
+      openWorldHint: true,
+    },
+  },
+  async (args) => {
+    const daysThreshold = args.daysThreshold ?? 7;
+    const bufferDays = args.bufferDays ?? 1;
+    const dryRun = args.dryRun ?? false;
+
+    const authToken = resolveAuthToken(args.authToken);
+    if (!authToken) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: Auth token is required for rescheduling. Provide it via 'authToken' parameter or 'THINGS_AUTH_TOKEN' environment variable.",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    // Format a Date as YYYY-MM-DD in local time
+    function formatDateLocal(date: Date): string {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    // Parse the YYYY-MM-DD portion of an ISO8601 string as a local-midnight Date
+    // to avoid UTC-vs-local offset issues.
+    function parseDateOnly(isoString: string): Date {
+      const datePart = isoString.slice(0, 10);
+      const [year, month, day] = datePart.split("-").map(Number);
+      return new Date(year, month - 1, day);
+    }
+
+    const now = new Date();
+    const todayMidnight = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+
+    let todos;
+    try {
+      todos = await getTodosFromList("Today");
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error fetching Today list: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const totalToday = todos.length;
+
+    type RescheduledEntry = {
+      id: string;
+      name: string;
+      oldWhen: string | null;
+      newWhen: string;
+      dueDate: string;
+      daysUntilDue: number;
+    };
+
+    type SkippedEntry = {
+      id: string;
+      name: string;
+      reason: string;
+      dueDate: string | null;
+      daysUntilDue: number | null;
+    };
+
+    const rescheduled: RescheduledEntry[] = [];
+    const skipped: SkippedEntry[] = [];
+
+    for (const todo of todos) {
+      if (todo.status !== "open") {
+        skipped.push({
+          id: todo.id,
+          name: todo.name,
+          reason: `status is '${todo.status}', not open`,
+          dueDate: todo.dueDate,
+          daysUntilDue: null,
+        });
+        continue;
+      }
+
+      if (!todo.dueDate) {
+        skipped.push({
+          id: todo.id,
+          name: todo.name,
+          reason: "no deadline set",
+          dueDate: null,
+          daysUntilDue: null,
+        });
+        continue;
+      }
+
+      const deadlineDate = parseDateOnly(todo.dueDate);
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const daysUntilDue = Math.round(
+        (deadlineDate.getTime() - todayMidnight.getTime()) / msPerDay
+      );
+
+      if (daysUntilDue < daysThreshold) {
+        skipped.push({
+          id: todo.id,
+          name: todo.name,
+          reason: `deadline is only ${daysUntilDue} day(s) away (threshold: ${daysThreshold})`,
+          dueDate: todo.dueDate,
+          daysUntilDue,
+        });
+        continue;
+      }
+
+      const newWhenDate = new Date(deadlineDate);
+      newWhenDate.setDate(newWhenDate.getDate() - bufferDays);
+
+      // Guard: newWhen must be strictly after today so the todo actually moves out of Today
+      if (newWhenDate.getTime() <= todayMidnight.getTime()) {
+        skipped.push({
+          id: todo.id,
+          name: todo.name,
+          reason: `computed newWhen (${formatDateLocal(newWhenDate)}) would not move the to-do out of Today`,
+          dueDate: todo.dueDate,
+          daysUntilDue,
+        });
+        continue;
+      }
+
+      const newWhenStr = formatDateLocal(newWhenDate);
+      const oldWhen = todo.activationDate
+        ? parseDateOnly(todo.activationDate).toISOString().slice(0, 10)
+        : null;
+
+      rescheduled.push({
+        id: todo.id,
+        name: todo.name,
+        oldWhen,
+        newWhen: newWhenStr,
+        dueDate: todo.dueDate.slice(0, 10),
+        daysUntilDue,
+      });
+    }
+
+    if (dryRun) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                rescheduled,
+                skipped,
+                totalToday,
+                rescheduledCount: rescheduled.length,
+                dryRun: true,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    const errors: Array<{ id: string; name: string; error: string }> = [];
+
+    for (const entry of rescheduled) {
+      const url = buildUpdateTodoURL({
+        "auth-token": authToken,
+        id: entry.id,
+        when: entry.newWhen,
+      });
+
+      try {
+        await openThingsURL(url);
+      } catch (error) {
+        errors.push({
+          id: entry.id,
+          name: entry.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const successfullyRescheduled = rescheduled.filter(
+      (entry) => !errors.some((e) => e.id === entry.id)
+    );
+
+    const isError =
+      errors.length > 0 && successfullyRescheduled.length === 0;
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            {
+              rescheduled: successfullyRescheduled,
+              skipped,
+              ...(errors.length > 0 ? { errors } : {}),
+              totalToday,
+              rescheduledCount: successfullyRescheduled.length,
+              dryRun: false,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+      ...(isError ? { isError: true } : {}),
+    };
+  }
+);
+
 // --------------------------------------------------------------------------
 // Start Server
 // --------------------------------------------------------------------------
