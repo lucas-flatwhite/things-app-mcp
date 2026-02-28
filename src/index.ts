@@ -1134,6 +1134,18 @@ type RescheduledEntry = {
   daysUntilDue: number;
 };
 
+/**
+ * Skip reasons for reschedule filtering. Used as keys in skippedSummary.
+ */
+const SKIP_REASONS = {
+  STATUS_NOT_OPEN: "status is not open",
+  NO_DEADLINE: "no deadline set",
+  EXPLICITLY_TODAY: "explicitly scheduled for today (activationDate = today)",
+  DEADLINE_WITHIN_THRESHOLD: (daysThreshold: number) =>
+    `deadline within threshold (< ${daysThreshold} days)`,
+  WOULD_NOT_MOVE: "computed new date would not move to-do out of Today",
+} as const;
+
 server.registerTool(
   "reschedule-distant-todos",
   {
@@ -1224,20 +1236,21 @@ server.registerTool(
 
     for (const todo of todos) {
       if (todo.status !== "open") {
-        skipWith("status is not open");
+        skipWith(SKIP_REASONS.STATUS_NOT_OPEN);
         continue;
       }
 
       if (!todo.dueDate) {
-        skipWith("no deadline set");
+        skipWith(SKIP_REASONS.NO_DEADLINE);
         continue;
       }
 
       // Protect items explicitly scheduled for today by the user
+      let activationStr: string | null = null;
       if (todo.activationDate) {
-        const activationStr = formatDateLocal(parseDateOnly(todo.activationDate));
+        activationStr = formatDateLocal(parseDateOnly(todo.activationDate));
         if (activationStr === todayStr) {
-          skipWith("explicitly scheduled for today (activationDate = today)");
+          skipWith(SKIP_REASONS.EXPLICITLY_TODAY);
           continue;
         }
       }
@@ -1246,7 +1259,7 @@ server.registerTool(
       const daysUntilDue = daysBetween(todayMidnight, deadlineDate);
 
       if (daysUntilDue < daysThreshold) {
-        skipWith(`deadline within threshold (< ${daysThreshold} days)`);
+        skipWith(SKIP_REASONS.DEADLINE_WITHIN_THRESHOLD(daysThreshold));
         continue;
       }
 
@@ -1255,14 +1268,12 @@ server.registerTool(
 
       // Guard: newWhen must be strictly after today so the todo actually moves out of Today
       if (newWhenDate.getTime() <= todayMidnight.getTime()) {
-        skipWith("computed new date would not move to-do out of Today");
+        skipWith(SKIP_REASONS.WOULD_NOT_MOVE);
         continue;
       }
 
       const newWhenStr = formatDateLocal(newWhenDate);
-      const oldWhen = todo.activationDate
-        ? formatDateLocal(parseDateOnly(todo.activationDate))
-        : null;
+      const oldWhen = activationStr;
 
       rescheduled.push({
         id: todo.id,

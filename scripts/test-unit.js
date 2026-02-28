@@ -243,6 +243,16 @@ async function testURLBuilders() {
 // 3. Reschedule Logic Tests (MCP protocol over stdio, mock-free pure logic)
 // =========================================================================
 
+// Skip reasons constants (kept in sync with src/index.ts SKIP_REASONS)
+const TEST_SKIP_REASONS = {
+  STATUS_NOT_OPEN: "status is not open",
+  NO_DEADLINE: "no deadline set",
+  EXPLICITLY_TODAY: "explicitly scheduled for today (activationDate = today)",
+  DEADLINE_WITHIN_THRESHOLD: (daysThreshold) =>
+    `deadline within threshold (< ${daysThreshold} days)`,
+  WOULD_NOT_MOVE: "computed new date would not move to-do out of Today",
+};
+
 function simulateRescheduleLogic(todos, options = {}) {
   /**
    * Replicates the filtering logic from the reschedule-distant-todos handler
@@ -264,19 +274,20 @@ function simulateRescheduleLogic(todos, options = {}) {
 
   for (const todo of todos) {
     if (todo.status !== "open") {
-      skipWith("status is not open");
+      skipWith(TEST_SKIP_REASONS.STATUS_NOT_OPEN);
       continue;
     }
 
     if (!todo.dueDate) {
-      skipWith("no deadline set");
+      skipWith(TEST_SKIP_REASONS.NO_DEADLINE);
       continue;
     }
 
+    let activationStr = null;
     if (todo.activationDate) {
-      const activationStr = formatDateLocal(parseDateOnly(todo.activationDate));
+      activationStr = formatDateLocal(parseDateOnly(todo.activationDate));
       if (activationStr === todayStr) {
-        skipWith("explicitly scheduled for today (activationDate = today)");
+        skipWith(TEST_SKIP_REASONS.EXPLICITLY_TODAY);
         continue;
       }
     }
@@ -285,7 +296,7 @@ function simulateRescheduleLogic(todos, options = {}) {
     const daysUntilDue = daysBetween(todayMidnight, deadlineDate);
 
     if (daysUntilDue < daysThreshold) {
-      skipWith(`deadline within threshold (< ${daysThreshold} days)`);
+      skipWith(TEST_SKIP_REASONS.DEADLINE_WITHIN_THRESHOLD(daysThreshold));
       continue;
     }
 
@@ -293,14 +304,12 @@ function simulateRescheduleLogic(todos, options = {}) {
     newWhenDate.setDate(newWhenDate.getDate() - bufferDays);
 
     if (newWhenDate.getTime() <= todayMidnight.getTime()) {
-      skipWith("computed new date would not move to-do out of Today");
+      skipWith(TEST_SKIP_REASONS.WOULD_NOT_MOVE);
       continue;
     }
 
     const newWhenStr = formatDateLocal(newWhenDate);
-    const oldWhen = todo.activationDate
-      ? formatDateLocal(parseDateOnly(todo.activationDate))
-      : null;
+    const oldWhen = activationStr;
 
     rescheduled.push({
       id: todo.id,
@@ -353,7 +362,7 @@ function testRescheduleLogic() {
     const todos = [todo({ name: "Close deadline", dueDate: "2026-03-05T00:00:00.000Z" })];
     const r = simulateRescheduleLogic(todos, { now: NOW });
     assertEqual(r.rescheduled.length, 0, "Close deadline: not rescheduled");
-    assertEqual(r.skippedSummary["deadline within threshold (< 7 days)"], 1, "Close deadline: skip reason");
+    assertEqual(r.skippedSummary[TEST_SKIP_REASONS.DEADLINE_WITHIN_THRESHOLD(7)], 1, "Close deadline: skip reason");
   }
 
   // 3c. No deadline -> skip
@@ -361,7 +370,7 @@ function testRescheduleLogic() {
     const todos = [todo({ name: "No deadline" })];
     const r = simulateRescheduleLogic(todos, { now: NOW });
     assertEqual(r.rescheduled.length, 0, "No deadline: not rescheduled");
-    assertEqual(r.skippedSummary["no deadline set"], 1, "No deadline: skip reason");
+    assertEqual(r.skippedSummary[TEST_SKIP_REASONS.NO_DEADLINE], 1, "No deadline: skip reason");
   }
 
   // 3d. Completed status -> skip
@@ -369,7 +378,7 @@ function testRescheduleLogic() {
     const todos = [todo({ name: "Done", status: "completed", dueDate: "2026-06-01T00:00:00.000Z" })];
     const r = simulateRescheduleLogic(todos, { now: NOW });
     assertEqual(r.rescheduled.length, 0, "Completed: not rescheduled");
-    assertEqual(r.skippedSummary["status is not open"], 1, "Completed: skip reason");
+    assertEqual(r.skippedSummary[TEST_SKIP_REASONS.STATUS_NOT_OPEN], 1, "Completed: skip reason");
   }
 
   // 3e. Canceled status -> skip
@@ -389,7 +398,7 @@ function testRescheduleLogic() {
     const r = simulateRescheduleLogic(todos, { now: NOW });
     assertEqual(r.rescheduled.length, 0, "activationDate=today: protected");
     assertEqual(
-      r.skippedSummary["explicitly scheduled for today (activationDate = today)"],
+      r.skippedSummary[TEST_SKIP_REASONS.EXPLICITLY_TODAY],
       1,
       "activationDate=today: skip reason"
     );
@@ -429,7 +438,7 @@ function testRescheduleLogic() {
     const todos = [todo({ name: "Guard test", dueDate: "2026-03-08T00:00:00.000Z" })];
     const r = simulateRescheduleLogic(todos, { now: NOW, bufferDays: 8 });
     assertEqual(r.rescheduled.length, 0, "newWhen=today guard: not rescheduled");
-    assertEqual(r.skippedSummary["computed new date would not move to-do out of Today"], 1, "newWhen=today guard: reason");
+    assertEqual(r.skippedSummary[TEST_SKIP_REASONS.WOULD_NOT_MOVE], 1, "newWhen=today guard: reason");
   }
 
   // 3k. newWhen would be past (bufferDays larger than daysUntilDue)
@@ -455,10 +464,10 @@ function testRescheduleLogic() {
     const ids = r.rescheduled.map(e => e.id);
     assert(ids.includes("1"), "Mixed: 'Far' rescheduled");
     assert(ids.includes("6"), "Mixed: 'Also Far' rescheduled");
-    assertEqual(r.skippedSummary["no deadline set"], 1, "Mixed: 1 no-deadline");
-    assertEqual(r.skippedSummary["status is not open"], 1, "Mixed: 1 completed");
+    assertEqual(r.skippedSummary[TEST_SKIP_REASONS.NO_DEADLINE], 1, "Mixed: 1 no-deadline");
+    assertEqual(r.skippedSummary[TEST_SKIP_REASONS.STATUS_NOT_OPEN], 1, "Mixed: 1 completed");
     assertEqual(
-      r.skippedSummary["explicitly scheduled for today (activationDate = today)"],
+      r.skippedSummary[TEST_SKIP_REASONS.EXPLICITLY_TODAY],
       1,
       "Mixed: 1 protected"
     );
@@ -533,7 +542,7 @@ function testRescheduleLogic() {
       todo({ name: "NoDL3" }),
     ];
     const r = simulateRescheduleLogic(todos, { now: NOW });
-    assertEqual(r.skippedSummary["no deadline set"], 3, "Skip aggregation: 3 no-deadline items counted");
+    assertEqual(r.skippedSummary[TEST_SKIP_REASONS.NO_DEADLINE], 3, "Skip aggregation: 3 no-deadline items counted");
   }
 }
 
