@@ -1089,6 +1089,268 @@ server.registerTool(
 );
 
 // --------------------------------------------------------------------------
+// Date Utility Helpers (used by reschedule-distant-todos)
+// --------------------------------------------------------------------------
+
+/**
+ * Format a Date as YYYY-MM-DD in local time.
+ */
+function formatDateLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Parse the YYYY-MM-DD portion of an ISO8601 string as a local-midnight Date
+ * to avoid UTC-vs-local offset issues.
+ */
+function parseDateOnly(isoString: string): Date {
+  const datePart = isoString.slice(0, 10);
+  const [year, month, day] = datePart.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * Calculate the number of whole days between two midnight-aligned dates.
+ * Uses Math.floor to avoid DST-related rounding issues.
+ */
+function daysBetween(from: Date, to: Date): number {
+  const msPerDay = 1000 * 60 * 60 * 24;
+  return Math.floor((to.getTime() - from.getTime()) / msPerDay);
+}
+
+// --------------------------------------------------------------------------
+// Reschedule Distant To-Dos Tool
+// --------------------------------------------------------------------------
+
+type RescheduledEntry = {
+  id: string;
+  name: string;
+  oldWhen: string | null;
+  newWhen: string;
+  dueDate: string;
+  daysUntilDue: number;
+};
+
+server.registerTool(
+  "reschedule-distant-todos",
+  {
+    title: "Reschedule Distant To-Dos",
+    description:
+      "Among today's to-do list in Things, find items whose deadline (dueDate) is still far enough in the future and reschedule their 'when' date to a configurable number of days before the deadline. This clears Today of items that are not urgently needed today. Items explicitly scheduled for today (activationDate = today) are preserved. Requires your Things auth-token for write operations.",
+    inputSchema: {
+      authToken: z
+        .string()
+        .optional()
+        .describe(
+          "Things URL scheme authorization token (find in Things Settings > General > Things URLs). If omitted, tries to read from THINGS_AUTH_TOKEN env var."
+        ),
+      daysThreshold: z
+        .number()
+        .optional()
+        .describe(
+          "Minimum number of days until deadline for a to-do to be considered distant and eligible for rescheduling (default: 7). To-dos with fewer days remaining are left in Today."
+        ),
+      bufferDays: z
+        .number()
+        .optional()
+        .describe(
+          "How many days before the deadline to set the new 'when' date (default: 3). For example, with bufferDays=3 a deadline 10 days away becomes a 'when' of 7 days from today."
+        ),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, only report which to-dos would be rescheduled without making any changes (default: false)."
+        ),
+    },
+    annotations: {
+      title: "Reschedule Distant To-Dos",
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    },
+  },
+  async (args) => {
+    const daysThreshold = args.daysThreshold ?? 7;
+    const bufferDays = args.bufferDays ?? 3;
+    const dryRun = args.dryRun ?? false;
+
+    const authToken = resolveAuthToken(args.authToken);
+    if (!authToken) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: Auth token is required for rescheduling. Provide it via 'authToken' parameter or 'THINGS_AUTH_TOKEN' environment variable.",
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const now = new Date();
+    const todayMidnight = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+    const todayStr = formatDateLocal(todayMidnight);
+
+    let todos;
+    try {
+      todos = await getTodosFromList("Today");
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error fetching Today list: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const totalToday = todos.length;
+    const rescheduled: RescheduledEntry[] = [];
+    const skippedSummary: Record<string, number> = {};
+
+    function skipWith(reason: string): void {
+      skippedSummary[reason] = (skippedSummary[reason] ?? 0) + 1;
+    }
+
+    for (const todo of todos) {
+      if (todo.status !== "open") {
+        skipWith("status is not open");
+        continue;
+      }
+
+      if (!todo.dueDate) {
+        skipWith("no deadline set");
+        continue;
+      }
+
+      // Protect items explicitly scheduled for today by the user
+      if (todo.activationDate) {
+        const activationStr = formatDateLocal(parseDateOnly(todo.activationDate));
+        if (activationStr === todayStr) {
+          skipWith("explicitly scheduled for today (activationDate = today)");
+          continue;
+        }
+      }
+
+      const deadlineDate = parseDateOnly(todo.dueDate);
+      const daysUntilDue = daysBetween(todayMidnight, deadlineDate);
+
+      if (daysUntilDue < daysThreshold) {
+        skipWith(`deadline within threshold (< ${daysThreshold} days)`);
+        continue;
+      }
+
+      const newWhenDate = new Date(deadlineDate);
+      newWhenDate.setDate(newWhenDate.getDate() - bufferDays);
+
+      // Guard: newWhen must be strictly after today so the todo actually moves out of Today
+      if (newWhenDate.getTime() <= todayMidnight.getTime()) {
+        skipWith("computed new date would not move to-do out of Today");
+        continue;
+      }
+
+      const newWhenStr = formatDateLocal(newWhenDate);
+      const oldWhen = todo.activationDate
+        ? formatDateLocal(parseDateOnly(todo.activationDate))
+        : null;
+
+      rescheduled.push({
+        id: todo.id,
+        name: todo.name,
+        oldWhen,
+        newWhen: newWhenStr,
+        dueDate: todo.dueDate.slice(0, 10),
+        daysUntilDue,
+      });
+    }
+
+    if (dryRun) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                dryRun: true,
+                totalToday,
+                rescheduledCount: rescheduled.length,
+                rescheduled,
+                skippedSummary,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    // Use a single JSON batch update instead of sequential URL calls
+    // to avoid rate-limiting issues with the Things URL scheme.
+    const batchData = rescheduled.map((entry) => ({
+      type: "to-do" as const,
+      operation: "update" as const,
+      id: entry.id,
+      attributes: { when: entry.newWhen },
+    }));
+
+    let batchError: string | null = null;
+
+    if (batchData.length > 0) {
+      const url = buildJsonURL({
+        data: batchData,
+        "auth-token": authToken,
+      });
+
+      try {
+        await openThingsURL(url);
+      } catch (error) {
+        batchError =
+          error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    const hasError = batchError !== null;
+    const successCount = hasError ? 0 : rescheduled.length;
+
+    const resultPayload: Record<string, unknown> = {
+      dryRun: false,
+      totalToday,
+      rescheduledCount: successCount,
+      rescheduled: hasError ? [] : rescheduled,
+      skippedSummary,
+    };
+
+    if (hasError) {
+      resultPayload.error = batchError;
+    }
+
+    resultPayload.hint =
+      "Use 'get-todos' with list 'Today' to verify the changes were applied correctly.";
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(resultPayload, null, 2),
+        },
+      ],
+      ...(hasError ? { isError: true } : {}),
+    };
+  }
+);
+
+// --------------------------------------------------------------------------
 // Start Server
 // --------------------------------------------------------------------------
 
