@@ -29,6 +29,20 @@ An MCP (Model Context Protocol) server for [Things 3](https://culturedcode.com/t
 | `search-todos` | Search to-dos by title/notes content |
 | `get-recent-todos` | Get recently modified to-dos |
 
+### Automation (Batch Operations)
+
+| Tool | Description |
+|------|-------------|
+| `reschedule-distant-todos` | Move distant-deadline to-dos out of Today. Finds items whose deadline is far away and reschedules their start date to a few days before the deadline, keeping your Today list focused on what matters now. Requires auth-token. |
+
+**Key behaviors of `reschedule-distant-todos`:**
+- Items explicitly scheduled for today (`activationDate` = today) are always preserved
+- Uses a single JSON batch update for atomic, reliable rescheduling
+- `daysThreshold` (default: 7) controls how many days away a deadline must be to qualify
+- `bufferDays` (default: 3) controls how many days before the deadline to set the new start date
+- Supports `dryRun` mode to preview changes without applying them
+- Annotated with `destructiveHint: true` so MCP clients can prompt for user confirmation
+
 ## Requirements
 
 - **macOS** (required for AppleScript/JXA and `open` command)
@@ -108,7 +122,7 @@ gemini mcp add things npx -y things-app-mcp@latest
 
 ### Auth Token Configuration
 
-To use `update-todo` and `update-project`, you need your Things auth-token.
+To use `update-todo`, `update-project`, and `reschedule-distant-todos`, you need your Things auth-token.
 
 **Option 1: Environment Variable (Recommended)**
 
@@ -212,6 +226,31 @@ The AI will call `get-todos` with `{ "list": "Today" }` and return the structure
 
 The AI will first search/get the to-do to find its ID, then call `update-todo` with the auth-token.
 
+### Cleaning Up Today
+
+```
+"My Today list is too cluttered. Move everything that isn't due soon to later."
+```
+
+The AI will call `reschedule-distant-todos` with `{ "dryRun": true }` first to preview, then apply:
+```json
+{
+  "daysThreshold": 7,
+  "bufferDays": 3,
+  "dryRun": false
+}
+```
+
+Items with deadlines 7+ days away will be rescheduled to 3 days before their deadline. Items you explicitly set to today are always preserved.
+
+### Previewing Reschedule Changes
+
+```
+"Show me which todos would be moved out of Today without actually changing anything"
+```
+
+The AI will call `reschedule-distant-todos` with `{ "dryRun": true }` and return a list of what would change.
+
 ## Things URL Scheme Reference
 
 This MCP server implements the full [Things URL Scheme v2](https://culturedcode.com/things/support/articles/2803573/):
@@ -246,6 +285,10 @@ things-app-mcp/
     index.ts          # MCP server entry point with all tool registrations
     things-url.ts     # Things URL scheme builder (URL construction)
     applescript.ts    # AppleScript/JXA executor (read operations)
+  scripts/
+    test-client.js    # Basic MCP server connectivity test
+    test-all-tools.js # Integration tests for all 16 tools
+    test-unit.js      # Unit tests for logic, URL builders, and edge cases (122 tests)
   dist/               # Compiled JavaScript output
   package.json
   tsconfig.json
@@ -270,6 +313,29 @@ npm run dev
 
 # Run directly
 npm start
+```
+
+## Testing
+
+See [TESTING.md](TESTING.md) for full details.
+
+```bash
+# Unit tests (date utilities, URL builders, reschedule logic, edge cases)
+# Runs anywhere - no macOS or Things 3 required
+node scripts/test-unit.js
+
+# Integration tests (all 16 tools via MCP protocol)
+# Requires macOS + Things 3 for full coverage
+npm run test:tools
+
+# With write operations enabled
+THINGS_MCP_TEST_ALLOW_WRITES=1 npm run test:tools
+
+# Full suite with auth token
+THINGS_AUTH_TOKEN=your-token \
+THINGS_MCP_TEST_TODO_ID=some-id \
+THINGS_MCP_TEST_PROJECT_ID=some-id \
+npm run test:tools
 ```
 
 ## License
