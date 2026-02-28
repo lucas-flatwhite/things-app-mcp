@@ -26,6 +26,7 @@ const expectedTools = [
   "get-tags",
   "search-todos",
   "get-recent-todos",
+  "reschedule-distant-todos",
 ];
 
 const server = spawn("node", [serverPath], {
@@ -364,6 +365,97 @@ async function main() {
     { id: "MCP-NONEXISTENT-ID" },
     { expectError: true }
   );
+
+  // --------------------------------------------------------------------------
+  // reschedule-distant-todos tests
+  // --------------------------------------------------------------------------
+
+  // Error path: missing auth token
+  await callTool(
+    "reschedule-distant-todos",
+    {},
+    {
+      expectError: true,
+      expectedPattern: /Auth token is required/i,
+    }
+  );
+
+  // Dry-run path: requires Things running, so may be BLOCKED on CI
+  if (authToken) {
+    const dryRunResult = await callTool("reschedule-distant-todos", {
+      authToken,
+      dryRun: true,
+    });
+    if (dryRunResult.ok) {
+      const parsed = parseJsonText(dryRunResult.text ?? "");
+      if (!parsed || parsed.dryRun !== true) {
+        record(
+          "FAIL",
+          "reschedule-distant-todos (dryRun validation)",
+          "dryRun flag was not true in response"
+        );
+      } else if (typeof parsed.totalToday !== "number") {
+        record(
+          "FAIL",
+          "reschedule-distant-todos (dryRun validation)",
+          "totalToday is not a number"
+        );
+      } else if (typeof parsed.skippedSummary !== "object" || parsed.skippedSummary === null) {
+        record(
+          "FAIL",
+          "reschedule-distant-todos (dryRun validation)",
+          "skippedSummary is not an object"
+        );
+      } else if (typeof parsed.hint !== "undefined") {
+        record(
+          "FAIL",
+          "reschedule-distant-todos (dryRun validation)",
+          "dryRun response should not contain hint"
+        );
+      } else {
+        record(
+          "PASS",
+          "reschedule-distant-todos (dryRun validation)",
+          `totalToday=${parsed.totalToday}, wouldReschedule=${parsed.rescheduledCount}`
+        );
+      }
+    }
+  } else {
+    record(
+      "SKIP",
+      "reschedule-distant-todos (dryRun)",
+      "Set THINGS_AUTH_TOKEN to run dryRun test"
+    );
+  }
+
+  // Verify tool annotations in listing
+  const rescheduleTool = (listed?.tools ?? []).find(
+    (tool) => tool.name === "reschedule-distant-todos"
+  );
+  if (rescheduleTool) {
+    const ann = rescheduleTool.annotations ?? {};
+    if (ann.destructiveHint !== true) {
+      record(
+        "FAIL",
+        "reschedule-distant-todos (annotations)",
+        "destructiveHint should be true"
+      );
+    } else if (ann.readOnlyHint !== false) {
+      record(
+        "FAIL",
+        "reschedule-distant-todos (annotations)",
+        "readOnlyHint should be false"
+      );
+    } else {
+      record("PASS", "reschedule-distant-todos (annotations)");
+    }
+  } else {
+    record(
+      "FAIL",
+      "reschedule-distant-todos (annotations)",
+      "Tool not found in listing"
+    );
+  }
 
   const summary = {
     pass: results.filter((result) => result.status === "PASS").length,
