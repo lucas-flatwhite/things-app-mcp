@@ -1,5 +1,16 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
 .DS_Store
+
 .env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+
+# Local client config. .gemini has a machine-specific path.
+.gemini/
+.claude/settings.local.json

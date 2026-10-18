@@ -16,6 +16,8 @@
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "test:tools": "node scripts/test-all-tools.js",
+    "test:sync": "node scripts/test-notion-sync.js",
+    "sync": "node dist/notion-sync.js",
     "prepare": "npm run build"
   },
   "keywords": [

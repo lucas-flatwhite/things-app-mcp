@@ -17,26 +17,29 @@ function encodeParam(value: string): string {
  */
 function buildURL(
   command: string,
-  params: Record<string, string | boolean | undefined>
+  params: Record<string, string | boolean | undefined>,
+  clearKeys: readonly string[] = []
 ): string {
+  const clear = new Set(clearKeys);
   const filteredParams = Object.entries(params).filter(
-    ([, v]) => v !== undefined && v !== ""
+    ([key, v]) => !clear.has(key) && v !== undefined && v !== ""
   );
 
-  if (filteredParams.length === 0) {
+  const parts = filteredParams.map(([key, value]) => {
+    if (typeof value === "boolean") {
+      return `${key}=${value}`;
+    }
+    return `${key}=${encodeParam(value as string)}`;
+  });
+  for (const key of clearKeys) {
+    parts.push(`${key}=`);
+  }
+
+  if (parts.length === 0) {
     return `${THINGS_SCHEME}${command}`;
   }
 
-  const queryString = filteredParams
-    .map(([key, value]) => {
-      if (typeof value === "boolean") {
-        return `${key}=${value}`;
-      }
-      return `${key}=${encodeParam(value as string)}`;
-    })
-    .join("&");
-
-  return `${THINGS_SCHEME}${command}?${queryString}`;
+  return `${THINGS_SCHEME}${command}?${parts.join("&")}`;
 }
 
 // --------------------------------------------------------------------------
@@ -225,6 +228,11 @@ export interface UpdateTodoParams {
   "creation-date"?: string;
   /** Completion date (ISO8601) */
   "completion-date"?: string;
+  /**
+   * Send these keys with an empty value so Things clears them.
+   * `when` stays explicit (`anytime`, `someday`, or a date).
+   */
+  clear?: Array<"deadline" | "notes" | "tags">;
 }
 
 export function buildUpdateTodoURL(params: UpdateTodoParams): string {
@@ -272,7 +280,7 @@ export function buildUpdateTodoURL(params: UpdateTodoParams): string {
   if (params["completion-date"])
     urlParams["completion-date"] = params["completion-date"];
 
-  return buildURL("update", urlParams);
+  return buildURL("update", urlParams, params.clear ?? []);
 }
 
 // --------------------------------------------------------------------------

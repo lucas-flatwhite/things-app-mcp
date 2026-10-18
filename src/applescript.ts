@@ -95,7 +95,7 @@ async function runAppleScript(script: string): Promise<string> {
 /**
  * Executes JXA (JavaScript for Automation) and returns parsed JSON.
  */
-async function runJXA<T>(script: string): Promise<T> {
+export async function runJXA<T>(script: string): Promise<T> {
   const scriptWithFallback = withThingsAppFallback(script);
 
   try {
