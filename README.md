@@ -1,134 +1,42 @@
 # Things App MCP
 
-An MCP (Model Context Protocol) server for [Things 3](https://culturedcode.com/things/) on macOS. Enables AI assistants like Claude to create, read, update, and manage your tasks directly in Things.
+**English** | [한국어](README.ko.md)
 
-## Features
+MCP server for [Things 3](https://culturedcode.com/things/) on macOS. An assistant can add, read, and update to-dos through the Things URL scheme and JXA.
 
-### Write Operations (Things URL Scheme)
-
-| Tool | Description |
-|------|-------------|
-| `add-todo` | Create a new to-do with title, notes, dates, tags, checklist, project/area assignment |
-| `add-project` | Create a new project with to-dos, notes, dates, tags, area assignment |
-| `update-todo` | Update an existing to-do (requires auth-token) |
-| `update-project` | Update an existing project (requires auth-token) |
-| `show` | Navigate to a list, project, area, tag, or specific to-do |
-| `search` | Open the Things search screen |
-| `add-json` | Create complex structures via the Things JSON command |
-
-### Read Operations (AppleScript/JXA)
-
-| Tool | Description |
-|------|-------------|
-| `get-todos` | Get to-dos from a list (Inbox, Today, etc.), project, area, or by tag |
-| `get-todo-by-id` | Get a specific to-do by its ID |
-| `get-projects` | Get all projects |
-| `get-project-by-id` | Get a specific project by its ID |
-| `get-areas` | Get all areas |
-| `get-tags` | Get all tags |
-| `search-todos` | Search to-dos by title/notes content |
-| `get-recent-todos` | Get recently modified to-dos |
-
-### Automation (Batch Operations)
-
-| Tool | Description |
-|------|-------------|
-| `reschedule-distant-todos` | Move distant-deadline to-dos out of Today. Finds items whose deadline is far away and reschedules their start date to a few days before the deadline, keeping your Today list focused on what matters now. Requires auth-token. |
-
-**Key behaviors of `reschedule-distant-todos`:**
-- Items explicitly scheduled for today (`activationDate` = today) are always preserved
-- Uses a single JSON batch update for atomic, reliable rescheduling
-- `daysThreshold` (default: 7) controls how many days away a deadline must be to qualify
-- `bufferDays` (default: 3) controls how many days before the deadline to set the new start date
-- Supports `dryRun` mode to preview changes without applying them
-- Annotated with `destructiveHint: true` so MCP clients can prompt for user confirmation
+It runs on your Mac over stdio.
 
 ## Requirements
 
-- **macOS** (required for AppleScript/JXA and `open` command)
-- **Things 3** installed
-- **Node.js** >= 18
-- **Things URL Scheme** enabled (Things > Settings > General > Enable Things URLs)
+- macOS
+- [Things 3](https://culturedcode.com/things/)
+- Node.js 18 or newer
+- Things URLs turned on: **Things > Settings > General > Enable Things URLs**
+- Automation permission for whichever app starts the server (Terminal, Claude, Cursor, or Codex). `osascript` has to be allowed to control Things.
 
-## Installation
+## Install
 
 ```bash
-# Clone and build
-git clone <repository-url>
+git clone https://github.com/lucas-flatwhite/things-app-mcp.git
 cd things-app-mcp
 npm install
 npm run build
 ```
 
-Or install globally:
+You can also skip the clone and let the client run `npx -y things-app-mcp@latest`. The configs below do that.
 
-```bash
-npm install -g things-app-mcp
-```
+## Connect a client
 
-## Configuration
+Adding and reading to-dos works without a token. Changing an existing item, or applying a reschedule, needs the Things auth token.
+
+In Things: **Settings > General > Enable Things URLs > Manage**.
+
+Set `THINGS_AUTH_TOKEN` in the client config. If you pass `authToken` on each call, that token lands in the client log. Replies strip the token, notes, and JSON `data`. The URL given to `open` still has the token for a moment. Things expects it there.
 
 ### Claude Desktop
 
-Add to your Claude Desktop configuration file:
+`~/Library/Application Support/Claude/claude_desktop_config.json`
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "things": {
-      "command": "npx",
-      "args": ["-y", "things-app-mcp@latest"]
-    }
-  }
-}
-```
-
-### Cursor
-
-Add to your Cursor MCP settings (`.cursor/mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "things": {
-      "command": "npx",
-      "args": ["-y", "things-app-mcp@latest"]
-    }
-  }
-}
-```
-
-### Codex
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.things]
-command = "npx"
-args = ["-y", "things-app-mcp@latest"]
-startup_timeout_sec = 20
-tool_timeout_sec = 120
-```
-
-### Gemini CLI
-
-Run the following command to register the MCP server:
-
-```bash
-gemini mcp add things npx -y things-app-mcp@latest
-```
-
-### Auth Token Configuration
-
-To use `update-todo`, `update-project`, and `reschedule-distant-todos`, you need your Things auth-token.
-
-**Option 1: Environment Variable (Recommended)**
-
-Set the `THINGS_AUTH_TOKEN` environment variable in your MCP client configuration. This avoids needing to pass the token with every request.
-
-**Claude Desktop:**
 ```json
 {
   "mcpServers": {
@@ -143,7 +51,28 @@ Set the `THINGS_AUTH_TOKEN` environment variable in your MCP client configuratio
 }
 ```
 
-**Codex (`~/.codex/config.toml`):**
+### Cursor
+
+`.cursor/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "things": {
+      "command": "npx",
+      "args": ["-y", "things-app-mcp@latest"],
+      "env": {
+        "THINGS_AUTH_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+### Codex
+
+`~/.codex/config.toml`
+
 ```toml
 [mcp_servers.things]
 command = "npx"
@@ -155,30 +84,78 @@ tool_timeout_sec = 120
 THINGS_AUTH_TOKEN = "your-token-here"
 ```
 
-**Gemini CLI:**
-Set the environment variable in your shell configuration or pass it when running:
+### Gemini CLI
+
 ```bash
 export THINGS_AUTH_TOKEN="your-token-here"
+gemini mcp add things npx -y things-app-mcp@latest
 ```
 
-**Option 2: Parameter**
+For a local build, use `node` and the absolute path to `dist/index.js` instead of `npx`.
 
-If the environment variable is not set, you must pass the token as the `authToken` parameter when calling update tools:
+## Tools
 
-1. Open Things on Mac
-2. Go to **Things > Settings > General > Enable Things URLs > Manage**
-3. Copy your authorization token
-4. Pass it as the `authToken` parameter when calling update tools
+### Writing
 
-## Usage Examples
+| Tool | Description |
+|------|-------------|
+| `add-todo` | New to-do: title, notes, when, deadline, tags, checklist, project, or area. |
+| `add-project` | New project. Put to-do titles in `todos`, one per line. |
+| `update-todo` | Change a to-do by id, including completing or canceling it. Needs the token. |
+| `update-project` | Change a project by id. Needs the token. |
+| `show` | Open a list, project, area, tag, or to-do in Things. |
+| `search` | Open Things search. |
+| `add-json` | Nested projects, headings, to-dos, and checklist items. Updates need the token. |
 
-### Adding a To-Do
+When a write succeeds, macOS has opened the URL. Read the item again if you need to see that Things saved it. `add-todo` does not return the new id.
 
+### Reading
+
+| Tool | Description |
+|------|-------------|
+| `get-todos` | To-dos from one list, project, area, or tag. |
+| `get-todo-by-id` | One to-do by id. |
+| `get-projects` | Every project. |
+| `get-project-by-id` | One project by id. |
+| `get-areas` | Every area. |
+| `get-tags` | Every tag. |
+| `search-todos` | To-dos whose title or notes contain the query. |
+| `get-recent-todos` | To-dos changed in the last N days. Default is 7. |
+
+Call `get-todos` with one of `list`, `project`, `area`, or `tag`. If you leave them all out, you get Today.
+
+Lists: `Inbox`, `Today`, `Anytime`, `Upcoming`, `Someday`, `Logbook`.
+
+Results include titles and notes.
+
+### Clearing Today
+
+`reschedule-distant-todos` looks through Today for open items whose deadline is still far off, and moves the start date to a few days before that deadline.
+
+No arguments means preview only, and only when a token is set. To apply:
+
+```json
+{
+  "daysThreshold": 7,
+  "bufferDays": 3,
+  "dryRun": false,
+  "confirm": true
+}
 ```
-"Add a to-do called 'Buy groceries' scheduled for today with tags 'Errand'"
-```
 
-The AI will call `add-todo` with:
+- `daysThreshold` (default 7): a closer deadline stays in Today.
+- `bufferDays` (default 3): new start date, this many days before the deadline.
+- An item you put on today yourself (`activationDate` is today) stays where it is.
+- `dryRun: false` without `confirm: true` returns an error and leaves Today unread.
+- `confirm` is just an argument. A client that honors `destructiveHint` can still ask before it runs.
+- The update is one JSON batch.
+
+`update-todo`, `update-project`, and updates through `add-json` do not take `confirm`. With the token set, those calls can edit or complete items.
+
+## Examples
+
+Add a to-do:
+
 ```json
 {
   "title": "Buy groceries",
@@ -187,13 +164,8 @@ The AI will call `add-todo` with:
 }
 ```
 
-### Creating a Project with To-Dos
+Create a project and its to-dos:
 
-```
-"Create a project called 'Launch Website' in the Work area with to-dos: Design mockups, Build frontend, Deploy"
-```
-
-The AI will call `add-project` with:
 ```json
 {
   "title": "Launch Website",
@@ -202,140 +174,103 @@ The AI will call `add-project` with:
 }
 ```
 
-### Complex Project via JSON
+Read Today:
 
-```
-"Create a vacation planning project with headings for Travel, Accommodation, and Activities"
-```
-
-The AI will call `add-json` with structured JSON data containing nested headings and to-dos.
-
-### Reading To-Dos
-
-```
-"What's on my Today list?"
+```json
+{ "list": "Today" }
 ```
 
-The AI will call `get-todos` with `{ "list": "Today" }` and return the structured data.
+Read one project:
 
-### Updating a To-Do
-
-```
-"Mark the 'Buy groceries' todo as complete"
+```json
+{ "project": "Launch Website" }
 ```
 
-The AI will first search/get the to-do to find its ID, then call `update-todo` with the auth-token.
+Complete a to-do once you have its id:
 
-### Cleaning Up Today
-
-```
-"My Today list is too cluttered. Move everything that isn't due soon to later."
-```
-
-The AI will call `reschedule-distant-todos` with `{ "dryRun": true }` first to preview, then apply:
 ```json
 {
-  "daysThreshold": 7,
-  "bufferDays": 3,
-  "dryRun": false
+  "id": "the-todo-id",
+  "completed": true
 }
 ```
 
-Items with deadlines 7+ days away will be rescheduled to 3 days before their deadline. Items you explicitly set to today are always preserved.
+Preview a reschedule, then apply it:
 
-### Previewing Reschedule Changes
-
-```
-"Show me which todos would be moved out of Today without actually changing anything"
+```json
+{ "dryRun": true }
 ```
 
-The AI will call `reschedule-distant-todos` with `{ "dryRun": true }` and return a list of what would change.
+```json
+{ "dryRun": false, "confirm": true }
+```
 
-## Things URL Scheme Reference
+## Dates, lists, and JSON
 
-This MCP server implements the full [Things URL Scheme v2](https://culturedcode.com/things/support/articles/2803573/):
+Write tools follow the [Things URL scheme](https://culturedcode.com/things/support/articles/2803573/).
 
-### Date Formats
+### When and deadline
 
-| Format | Example | Description |
-|--------|---------|-------------|
-| Named | `today`, `tomorrow`, `evening`, `anytime`, `someday` | Built-in schedule options |
-| Date | `2026-03-15` | Specific date |
-| Date + Time | `2026-03-15@14:00` | Date with reminder |
-| Natural language | `next friday`, `in 3 days` | English natural language (parsed by Things) |
+| Format | Example |
+|--------|---------|
+| Named | `today`, `tomorrow`, `evening`, `anytime`, `someday` |
+| Date | `2026-03-15` |
+| Date and time | `2026-03-15@14:00` |
+| Natural language | `next friday`, `in 3 days` (Things reads these in English) |
 
-### Built-in List IDs (for `show` tool)
+### `show` list ids
 
 `inbox`, `today`, `anytime`, `upcoming`, `someday`, `logbook`, `tomorrow`, `deadlines`, `repeating`, `all-projects`, `logged-projects`
 
-### JSON Command Object Types
+### `add-json` types
 
-| Type | Description |
-|------|-------------|
-| `to-do` | A task with title, notes, when, deadline, tags, checklist-items |
-| `project` | A project with title, notes, items (to-dos and headings) |
-| `heading` | A section heading within a project |
-| `checklist-item` | A checklist item within a to-do |
+| Type | What it is |
+|------|------------|
+| `to-do` | A task: title, notes, when, deadline, tags, checklist items. |
+| `project` | A project: title, notes, nested items. |
+| `heading` | A section in a project. |
+| `checklist-item` | One line in a to-do. |
 
-## Architecture
+To update, set `"operation": "update"` and `"id"`. That needs the auth token.
+
+## Layout
 
 ```
-things-app-mcp/
-  src/
-    index.ts          # MCP server entry point with all tool registrations
-    things-url.ts     # Things URL scheme builder (URL construction)
-    applescript.ts    # AppleScript/JXA executor (read operations)
-  scripts/
-    test-client.js    # Basic MCP server connectivity test
-    test-all-tools.js # Integration tests for all 16 tools
-    test-unit.js      # Unit tests for logic, URL builders, and edge cases (122 tests)
-  dist/               # Compiled JavaScript output
-  package.json
-  tsconfig.json
+src/index.ts            MCP tools
+src/things-url.ts       things:/// URLs, and stripping secrets from replies
+src/applescript.ts      JXA reads
+src/reschedule-mode.ts  preview versus apply
 ```
 
-### How It Works
-
-- **Write operations** construct `things:///` URLs and open them via macOS `open` command. Things processes the URL and creates/updates items accordingly.
-- **Read operations** use JXA (JavaScript for Automation) scripts executed via `osascript` to query the Things database directly and return structured JSON data.
+Writes build a `things:///` URL and hand it to `open`. Reads run JXA with `osascript`.
 
 ## Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Build
 npm run build
-
-# Watch mode
-npm run dev
-
-# Run directly
-npm start
+npm run dev    # tsc --watch
+npm start      # node dist/index.js
 ```
 
 ## Testing
 
-See [TESTING.md](TESTING.md) for full details.
+See [TESTING.md](TESTING.md).
 
 ```bash
-# Unit tests (date utilities, URL builders, reschedule logic, edge cases)
-# Runs anywhere - no macOS or Things 3 required
+# No Things required.
 node scripts/test-unit.js
 
-# Integration tests (all 16 tools via MCP protocol)
-# Requires macOS + Things 3 for full coverage
+# macOS and Things 3. Writes stay off.
 npm run test:tools
 
-# With write operations enabled
 THINGS_MCP_TEST_ALLOW_WRITES=1 npm run test:tools
+```
 
-# Full suite with auth token
-THINGS_AUTH_TOKEN=your-token \
-THINGS_MCP_TEST_TODO_ID=some-id \
-THINGS_MCP_TEST_PROJECT_ID=some-id \
-npm run test:tools
+One case in the unit script reads Today when Things is installed. Skip it with:
+
+```bash
+THINGS_UNIT_SKIP_LIVE=1 node scripts/test-unit.js
 ```
 
 ## License

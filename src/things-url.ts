@@ -416,3 +416,41 @@ export function buildJsonURL(params: JsonParams): string {
 
   return buildURL("json", urlParams);
 }
+
+const SENSITIVE_URL_PARAMS = [
+  "auth-token",
+  "data",
+  "notes",
+  "prepend-notes",
+  "append-notes",
+] as const;
+
+/**
+ * Redact secrets in free text, including URLs embedded in error messages.
+ * Longer parameter names are matched before `notes` so `append-notes` is not
+ * partially rewritten.
+ */
+export function redactSensitiveText(text: string): string {
+  return text.replace(
+    /((?:auth-token|append-notes|prepend-notes|notes|data)=)[^&\s]*/gi,
+    "$1***"
+  );
+}
+
+/**
+ * Return a Things URL safe to show in tool results and logs.
+ * The value passed to `open` stays unchanged.
+ */
+export function sanitizeThingsURL(rawURL: string): string {
+  try {
+    const parsed = new URL(rawURL);
+    for (const key of SENSITIVE_URL_PARAMS) {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.set(key, "***");
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return redactSensitiveText(rawURL);
+  }
+}

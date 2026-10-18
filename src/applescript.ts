@@ -5,8 +5,30 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { redactSensitiveText, sanitizeThingsURL } from "./things-url.js";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * A JavaScript string literal safe to embed in a JXA script.
+ * JSON.stringify escapes quotes, backslashes, and line breaks, so the
+ * value cannot close the string and run as code.
+ */
+export function jsStringLiteral(value: string): string {
+  return JSON.stringify(value)
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
+}
+
+/**
+ * A finite integer literal safe to embed in a JXA script.
+ */
+export function jsNumberLiteral(value: number): string {
+  if (!Number.isFinite(value)) {
+    throw new Error("JXA number must be finite");
+  }
+  return String(Math.trunc(value));
+}
 const THINGS_APP_CANDIDATES = [
   "Things3",
   "Things",
@@ -110,12 +132,11 @@ async function runJXA<T>(script: string): Promise<T> {
 export async function openThingsURL(url: string): Promise<string> {
   try {
     await execFileAsync("open", [url], { timeout: 10000 });
-    return `Successfully opened Things URL: ${url}`;
+    return `Successfully opened Things URL: ${sanitizeThingsURL(url)}`;
   } catch (error: unknown) {
     const err = error as { stderr?: string; message?: string };
-    throw new Error(
-      `Failed to open Things URL: ${err.stderr || err.message}`
-    );
+    const detail = redactSensitiveText(err.stderr || err.message || "unknown error");
+    throw new Error(`Failed to open Things URL: ${detail}`);
   }
 }
 
@@ -193,7 +214,7 @@ export async function getTodosFromList(
 
   const script = `
     const things = Application("Things3");
-    const todos = things.lists.byName("${normalizedList}").toDos();
+    const todos = things.lists.byName(${jsStringLiteral(normalizedList)}).toDos();
     const result = todos.map(todo => ({
       id: todo.id(),
       name: todo.name(),
@@ -219,10 +240,10 @@ export async function getTodosFromList(
 export async function getTodosFromProject(
   projectName: string
 ): Promise<ThingsTodo[]> {
-  const escapedName = projectName.replace(/"/g, '\\"');
+  const nameLiteral = jsStringLiteral(projectName);
   const script = `
     const things = Application("Things3");
-    const todos = things.projects.byName("${escapedName}").toDos();
+    const todos = things.projects.byName(${nameLiteral}).toDos();
     const result = todos.map(todo => ({
       id: todo.id(),
       name: todo.name(),
@@ -234,7 +255,7 @@ export async function getTodosFromProject(
       creationDate: todo.creationDate().toISOString(),
       modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
-      projectName: "${escapedName}",
+      projectName: ${nameLiteral},
       areaName: (() => { try { return todo.area().name(); } catch(e) { return null; } })()
     }));
     JSON.stringify(result);
@@ -248,10 +269,10 @@ export async function getTodosFromProject(
 export async function getTodosFromArea(
   areaName: string
 ): Promise<ThingsTodo[]> {
-  const escapedName = areaName.replace(/"/g, '\\"');
+  const nameLiteral = jsStringLiteral(areaName);
   const script = `
     const things = Application("Things3");
-    const todos = things.areas.byName("${escapedName}").toDos();
+    const todos = things.areas.byName(${nameLiteral}).toDos();
     const result = todos.map(todo => ({
       id: todo.id(),
       name: todo.name(),
@@ -264,7 +285,7 @@ export async function getTodosFromArea(
       modificationDate: todo.modificationDate() ? todo.modificationDate().toISOString() : null,
       completionDate: todo.completionDate() ? todo.completionDate().toISOString() : null,
       projectName: (() => { try { return todo.project().name(); } catch(e) { return null; } })(),
-      areaName: "${escapedName}"
+      areaName: ${nameLiteral}
     }));
     JSON.stringify(result);
   `;
@@ -275,10 +296,10 @@ export async function getTodosFromArea(
  * Get a specific to-do by ID.
  */
 export async function getTodoById(id: string): Promise<ThingsTodo> {
-  const escapedId = id.replace(/"/g, '\\"');
+  const idLiteral = jsStringLiteral(id);
   const script = `
     const things = Application("Things3");
-    const todo = things.toDos.byId("${escapedId}");
+    const todo = things.toDos.byId(${idLiteral});
     const result = {
       id: todo.id(),
       name: todo.name(),
@@ -328,10 +349,10 @@ export async function getProjects(): Promise<ThingsProject[]> {
  * Get a specific project by ID.
  */
 export async function getProjectById(id: string): Promise<ThingsProject> {
-  const escapedId = id.replace(/"/g, '\\"');
+  const idLiteral = jsStringLiteral(id);
   const script = `
     const things = Application("Things3");
-    const proj = things.projects.byId("${escapedId}");
+    const proj = things.projects.byId(${idLiteral});
     const result = {
       id: proj.id(),
       name: proj.name(),
@@ -387,13 +408,13 @@ export async function getTags(): Promise<ThingsTag[]> {
  * Get to-dos tagged with a specific tag name.
  */
 export async function getTodosByTag(tagName: string): Promise<ThingsTodo[]> {
-  const escapedName = tagName.replace(/"/g, '\\"');
+  const nameLiteral = jsStringLiteral(tagName);
   const script = `
     const things = Application("Things3");
     const allTodos = things.toDos();
     const result = allTodos.filter(todo => {
       const tags = todo.tagNames() || "";
-      return tags.split(", ").some(t => t === "${escapedName}");
+      return tags.split(", ").some(t => t === ${nameLiteral});
     }).map(todo => ({
       id: todo.id(),
       name: todo.name(),
@@ -417,10 +438,11 @@ export async function getTodosByTag(tagName: string): Promise<ThingsTodo[]> {
  * Get recently modified to-dos (within the last N days).
  */
 export async function getRecentTodos(days: number = 7): Promise<ThingsTodo[]> {
+  const daysLiteral = jsNumberLiteral(days);
   const script = `
     const things = Application("Things3");
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - ${days});
+    cutoff.setDate(cutoff.getDate() - ${daysLiteral});
     const allTodos = things.toDos();
     const result = allTodos.filter(todo => {
       const modDate = todo.modificationDate();
@@ -450,11 +472,11 @@ export async function getRecentTodos(days: number = 7): Promise<ThingsTodo[]> {
 export async function searchTodosByTitle(
   query: string
 ): Promise<ThingsTodo[]> {
-  const escapedQuery = query.replace(/"/g, '\\"').replace(/\\/g, "\\\\");
+  const queryLiteral = jsStringLiteral(query);
   const script = `
     const things = Application("Things3");
     const allTodos = things.toDos();
-    const queryLower = "${escapedQuery}".toLowerCase();
+    const queryLower = ${queryLiteral}.toLowerCase();
     const result = allTodos.filter(todo => {
       const name = todo.name() || "";
       const notes = todo.notes() || "";

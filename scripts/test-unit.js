@@ -140,6 +140,8 @@ async function testURLBuilders() {
     buildShowURL,
     buildSearchURL,
     buildJsonURL,
+    sanitizeThingsURL,
+    redactSensitiveText,
   } = await import(path.resolve(__dirname, "../dist/things-url.js"));
 
   // --- add-todo ---
@@ -237,6 +239,114 @@ async function testURLBuilders() {
   // --- Unicode in notes ---
   const unicodeUrl = buildAddTodoURL({ title: "Test", notes: "Korean: 할일" });
   assertIncludes(unicodeUrl, "notes=", "add-todo: unicode notes present");
+
+  const secretUrl = buildUpdateTodoURL({
+    "auth-token": "super-secret-token",
+    id: "todo-1",
+    when: "someday",
+    notes: "private note",
+    "append-notes": "hidden append",
+  });
+  const safeUrl = sanitizeThingsURL(secretUrl);
+  assert(!safeUrl.includes("super-secret-token"), "sanitize: auth-token removed");
+  assertIncludes(safeUrl, "auth-token=***", "sanitize: auth-token redacted");
+  assertIncludes(safeUrl, "id=todo-1", "sanitize: id preserved");
+  assertIncludes(safeUrl, "when=someday", "sanitize: when preserved");
+  assert(!safeUrl.includes("private%20note") && !safeUrl.includes("private note"), "sanitize: notes removed");
+  assert(!safeUrl.includes("hidden%20append") && !safeUrl.includes("hidden append"), "sanitize: append-notes removed");
+
+  const leaked = redactSensitiveText(
+    `Failed to open Things URL: things:///update?auth-token=super-secret-token&id=todo-1`
+  );
+  assert(!leaked.includes("super-secret-token"), "redact: token removed from error text");
+  assertIncludes(leaked, "auth-token=***", "redact: token marker remains");
+  assertIncludes(leaked, "id=todo-1", "redact: id preserved in error text");
+}
+
+async function testJxaEscaping() {
+  section("JXA Escaping");
+
+  const { jsStringLiteral, jsNumberLiteral } = await import(
+    path.resolve(__dirname, "../dist/applescript.js")
+  );
+
+  const samples = [
+    '"',
+    "\\",
+    '\\"',
+    '"; throw new Error("injected")',
+    "line1\nline2",
+    "line1\rline2",
+    "a\u2028b",
+    "a\u2029b",
+    "${process.exit(1)}",
+    "foo\\bar",
+    "quote ' and ` tick",
+  ];
+
+  for (const sample of samples) {
+    const literal = jsStringLiteral(sample);
+    assert(!/[\n\r\u2028\u2029]/.test(literal), `jxa: literal stays on one line (${JSON.stringify(sample).slice(0, 24)})`);
+    let evaluated;
+    try {
+      evaluated = Function(`"use strict"; return ${literal};`)();
+    } catch (error) {
+      assert(false, `jxa: literal evaluates (${JSON.stringify(sample).slice(0, 24)})`, String(error));
+      continue;
+    }
+    assertEqual(evaluated, sample, `jxa: roundtrip ${JSON.stringify(sample).slice(0, 24)}`);
+  }
+
+  const breakout = '"; throw new Error("injected")';
+  const script = `"use strict"; const queryLower = ${jsStringLiteral(breakout)}.toLowerCase(); return queryLower;`;
+  const queried = Function(script)();
+  assertEqual(queried, breakout.toLowerCase(), "jxa: quote does not break out of the string");
+
+  assertEqual(jsNumberLiteral(7), "7", "jxa: whole number");
+  assertEqual(jsNumberLiteral(7.9), "7", "jxa: truncates fractional days");
+  let rejected = false;
+  try {
+    jsNumberLiteral(Number.POSITIVE_INFINITY);
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, "jxa: non-finite number is rejected");
+}
+
+async function testRescheduleGuard() {
+  section("Reschedule Apply Guard");
+
+  const { resolveRescheduleAction } = await import(
+    path.resolve(__dirname, "../dist/reschedule-mode.js")
+  );
+
+  assertEqual(resolveRescheduleAction({}), "preview", "guard: omitted dryRun previews");
+  assertEqual(resolveRescheduleAction({ dryRun: true }), "preview", "guard: dryRun true previews");
+  assertEqual(
+    resolveRescheduleAction({ confirm: true }),
+    "preview",
+    "guard: confirm alone still previews"
+  );
+  assertEqual(
+    resolveRescheduleAction({ dryRun: true, confirm: true }),
+    "preview",
+    "guard: dryRun true wins over confirm"
+  );
+  assertEqual(
+    resolveRescheduleAction({ dryRun: false }),
+    "refused",
+    "guard: dryRun false without confirm is refused"
+  );
+  assertEqual(
+    resolveRescheduleAction({ dryRun: false, confirm: false }),
+    "refused",
+    "guard: confirm false is refused"
+  );
+  assertEqual(
+    resolveRescheduleAction({ dryRun: false, confirm: true }),
+    "apply",
+    "guard: dryRun false and confirm true applies"
+  );
 }
 
 // =========================================================================
@@ -689,18 +799,35 @@ async function testMCPProtocol() {
       "MCP: no auth -> error message"
     );
 
-    // Test: call with auth but no Things (dryRun) -> JXA error because no osascript
-    const dryResult = await request("tools/call", {
+    // Applying without confirm must fail before Things is contacted.
+    const refused = await request("tools/call", {
       name: "reschedule-distant-todos",
-      arguments: { authToken: "test-token", dryRun: true },
+      arguments: { authToken: "test-token", dryRun: false },
     });
-    // Should be an error because osascript doesn't exist on Linux
-    assertEqual(dryResult?.isError, true, "MCP: dryRun on Linux -> isError (no osascript)");
-    assertIncludes(
-      dryResult?.content?.[0]?.text ?? "",
-      "Error fetching Today list",
-      "MCP: dryRun -> fetching error"
+    const refusedText = refused?.content?.[0]?.text ?? "";
+    assertEqual(refused?.isError, true, "MCP: dryRun false without confirm -> isError");
+    assertIncludes(refusedText, "confirm: true", "MCP: refusal tells the caller to pass confirm");
+    assert(
+      !refusedText.includes("Error fetching Today list"),
+      "MCP: refusal does not read Today"
     );
+
+    if (process.env.THINGS_UNIT_SKIP_LIVE === "1") {
+      assert(true, "MCP: dryRun live call skipped");
+    } else {
+      // Test: call with auth but no Things (dryRun) -> JXA error because no osascript
+      const dryResult = await request("tools/call", {
+        name: "reschedule-distant-todos",
+        arguments: { authToken: "test-token", dryRun: true },
+      });
+      // Should be an error because osascript doesn't exist on Linux
+      assertEqual(dryResult?.isError, true, "MCP: dryRun on Linux -> isError (no osascript)");
+      assertIncludes(
+        dryResult?.content?.[0]?.text ?? "",
+        "Error fetching Today list",
+        "MCP: dryRun -> fetching error"
+      );
+    }
 
     // Test: update-todo without auth
     const noAuthUpdate = await request("tools/call", {
@@ -751,6 +878,8 @@ async function main() {
 
   testDateUtilities();
   await testURLBuilders();
+  await testJxaEscaping();
+  await testRescheduleGuard();
   testRescheduleLogic();
   testEdgeCases();
   await testMCPProtocol();
